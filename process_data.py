@@ -292,7 +292,7 @@ if __name__ == '__main__':
 
     progress.console.print('[green]Caricamento dati[/green]')
 
-    df = pd.read_csv(args.input, nrows=10000)
+    df = pd.read_csv(args.input)
     os.makedirs(f'{base_path}/processed', exist_ok=True)
     os.makedirs(f'{base_path}/test', exist_ok=True)
     os.makedirs(f'{base_path}/val', exist_ok=True)
@@ -450,7 +450,7 @@ if __name__ == '__main__':
 
             if phase != 'test':
                 prepare_balanced_dataset(datafile, progress, phase, labels)
-                
+
             clear_label_samples(datafile, labels)
 
         drop_label_samples(datafile, labels)
