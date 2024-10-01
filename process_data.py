@@ -157,13 +157,13 @@ def prepare_data(df_original,
 
     df = df[max_window:-future_lenght]
 
-    # df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume', 'spread',
-    #         'close_diff', 'body', 'lower_shadow', 'upper_shadow',
-    #         'sma_spread', 'ema_slow_fast_spread', 'ema_slow_middle_spread', 'ema_middle_fast_spread',
-    #         'bb_upper_spread', 'bb_lower_spread',
-    #         'spread_spread', 'volume_spread', 
-    #         'next_price_range_value_mean', 'next_price_range_value_max',
-    #         'label']]
+    df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume', 'spread',
+            'close_diff', 'body', 'lower_shadow', 'upper_shadow',
+            'sma_spread', 'ema_slow_fast_spread', 'ema_slow_middle_spread', 'ema_middle_fast_spread',
+            'bb_upper_spread', 'bb_lower_spread',
+            'spread_spread', 'volume_spread', 
+            'next_price_range_value_mean', 'next_price_range_value_max',
+            'label']]
 
     return df
 
@@ -292,7 +292,7 @@ if __name__ == '__main__':
 
     progress.console.print('[green]Caricamento dati[/green]')
 
-    df = pd.read_csv(args.input)
+    df = pd.read_csv(args.input, nrows=10000)
     os.makedirs(f'{base_path}/processed', exist_ok=True)
     os.makedirs(f'{base_path}/test', exist_ok=True)
     os.makedirs(f'{base_path}/val', exist_ok=True)
