@@ -497,18 +497,24 @@ if __name__ == '__main__':
         selected_rows = []
 
         file_task = progress.add_task(f"Select train/val/test", total=df_test_validation.shape[0])
+        val_sum = 0
+        test_sum = 0
         # Itera attraverso il DataFrame casualmente ordinato
         for i, row in df_test_validation.iterrows():
             if current_sum + row['class_distribution'][min_key] <= validation_target:
                 base_file_name = os.path.basename(row['file_name'])
                 shutil.move(row['file_name'], f'{base_path}/val/{base_file_name}')
                 current_sum += row['class_distribution'][min_key]
+                val_sum += row['class_distribution'][min_key]
             elif current_sum + row['class_distribution'][min_key] <= validation_target + test_target:
                 base_file_name = os.path.basename(row['file_name'])
                 shutil.move(row['file_name'], f'{base_path}/test/{base_file_name}')
                 current_sum += row['class_distribution'][min_key]
+                test_sum += row['class_distribution'][min_key]
             else:
                 break
+
+            progress.update(file_task, advance=1, description=f'Select train/val/test => {(min_value * len(targets)) - (val_sum * len(targets)) - (test_sum * len(targets)) }/{val_sum * len(targets)}/{test_sum*len(targets)}')
 
         for file in glob.glob(f'{base_path}/processed/*.csv'):
             base_file_name = os.path.basename(file)
