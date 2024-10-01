@@ -514,7 +514,7 @@ if __name__ == '__main__':
             else:
                 break
 
-            progress.update(file_task, advance=1, description=f'Select train/val/test => {(min_value * len(targets)) - (val_sum * len(targets)) - (test_sum * len(targets)) }/{val_sum * len(targets)}/{test_sum*len(targets)}')
+            progress.update(file_task, advance=1, description=f'Select train/val/test')
 
         for file in glob.glob(f'{base_path}/processed/*.csv'):
             base_file_name = os.path.basename(file)
