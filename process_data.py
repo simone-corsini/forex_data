@@ -369,7 +369,9 @@ if __name__ == '__main__':
                                                 spread_sma, volume_sma, 
                                                 future_lenght, targets, args.target_type)
                         if new_df.isna().sum().sum() > 0 or np.isinf(new_df).values.sum() > 0:
-                            print('Valori non validi nei dati')
+                            print('Valori non validi nei dati => NaN o Inf')
+                        elif new_df[features].apply(lambda x: (x >= -1) & (x <= 1)).all().all():
+                            print('Valori non validi nei dati => out of range')
                         else:
                             if new_df.shape[0] >= observation_lenght:
                                 first_date = new_df['timestamp'].iloc[0].strftime('%Y%m%d%H%M')
@@ -399,7 +401,9 @@ if __name__ == '__main__':
                                     future_lenght, targets, args.target_type)
             
             if new_df.isna().sum().sum() > 0 or np.isinf(new_df).values.sum() > 0:
-                print('Valori non validi nei dati')
+                print('Valori non validi nei dati => NaN o Inf')
+            elif new_df[features].apply(lambda x: (x >= -1) & (x <= 1)).all().all():
+                print('Valori non validi nei dati => out of range')
             else:
                 if new_df.shape[0] >= observation_lenght:
                     first_date = new_df['timestamp'].iloc[0].strftime('%Y%m%d%H%M')
