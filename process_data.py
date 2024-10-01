@@ -277,6 +277,7 @@ if __name__ == '__main__':
     parser.add_argument("--test_percent", type=float, help="Test percent", default=0.2)
     parser.add_argument("-t", "--targets", nargs="+", type=int, default=[1, 3, 6], help="List of targets (--targets 1 2 3), default=[1, 3, 6]")
     parser.add_argument("-tt", "--target_type", choices=['mean', 'max'], default='mean', help="Type of target to calculate (mean, max), default=mean")
+    parser.add_argument('--test', action='store_true', help="Lancia in test mode")
     args = parser.parse_args()
 
     base_path = args.output
@@ -292,7 +293,10 @@ if __name__ == '__main__':
 
     progress.console.print('[green]Caricamento dati[/green]')
 
-    df = pd.read_csv(args.input)
+    if args.test:
+        df = pd.read_csv(args.input, nrows=10000)
+    else:
+        df = pd.read_csv(args.input)
     os.makedirs(f'{base_path}/processed', exist_ok=True)
     os.makedirs(f'{base_path}/test', exist_ok=True)
     os.makedirs(f'{base_path}/val', exist_ok=True)
@@ -370,8 +374,12 @@ if __name__ == '__main__':
                                                 future_lenght, targets, args.target_type)
                         if new_df.isna().sum().sum() > 0 or np.isinf(new_df).values.sum() > 0:
                             print('Valori non validi nei dati => NaN o Inf')
-                        elif new_df[features].apply(lambda x: (x >= -1) & (x <= 1)).all().all():
-                            print('Valori non validi nei dati => out of range')
+                        elif new_df[features].apply(lambda x: (x < -1) | (x > 1)).any().any():
+                            progress.console.print('Valori non validi nei dati => out of range')
+                            out_values = new_df[features].apply(lambda x: (x < -1) | (x > 1))
+                            out_of_range_rows = new_df[out_values.any(axis=1)][features]
+                            progress.console.print(out_of_range_rows.values)
+                            exit()
                         else:
                             if new_df.shape[0] >= observation_lenght:
                                 first_date = new_df['timestamp'].iloc[0].strftime('%Y%m%d%H%M')
@@ -401,9 +409,13 @@ if __name__ == '__main__':
                                     future_lenght, targets, args.target_type)
             
             if new_df.isna().sum().sum() > 0 or np.isinf(new_df).values.sum() > 0:
-                print('Valori non validi nei dati => NaN o Inf')
-            elif new_df[features].apply(lambda x: (x >= -1) & (x <= 1)).all().all():
-                print('Valori non validi nei dati => out of range')
+                progress.console.print('Valori non validi nei dati => NaN o Inf')
+            elif new_df[features].apply(lambda x: (x < -1) | (x > 1)).any().any():
+                progress.console.print('Valori non validi nei dati => out of range')
+                out_values = new_df[features].apply(lambda x: (x < -1) | (x > 1))
+                out_of_range_rows = new_df[out_values.any(axis=1)][features]
+                progress.console.print(out_of_range_rows.values)
+                exit()
             else:
                 if new_df.shape[0] >= observation_lenght:
                     first_date = new_df['timestamp'].iloc[0].strftime('%Y%m%d%H%M')
