@@ -7,7 +7,7 @@ import glob
 import zipfile
 import h5py
 from collections import defaultdict
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, Task
 from rich.console import Console
 
 def calculate_shadows(row):
@@ -153,7 +153,7 @@ def prepare_data(df_original,
     #df['next_price_range_value_mean'] = df['close_diff'].shift(-future_lenght).rolling(window=future_lenght).mean() 
     df['next_price_range_value_max'] = max_spread(df['close'], future_lenght)
     df['label'] = df.apply(lambda row: calculate_category(row, f'next_price_range_value_{target_type}', 'spread', targets, base_commission), axis=1)
-
+    #df['label'] = df['label'].astype('Int64')
 
     df = df[max_window:-future_lenght]
 
@@ -226,6 +226,8 @@ def prepare_dataset(datafile, progress, base_path, phase, observation_length, fe
 
         progress.update(file_task, advance=1)
 
+    #progress.update(file_task, completed=True)
+
 def clear_label_samples(datafile, labels):
     with h5py.File(datafile, 'a') as file:
         for label in labels:
@@ -237,7 +239,7 @@ def drop_label_samples(datafile, labels):
         for label in labels:
             del file[label]     
 
-def prepare_balanced_dataset(datafile, progress, phase, labels):
+def prepare_balanced_dataset(datafile, progress, phase, labels, batch_size=10000):
     with h5py.File(datafile, 'a') as file:
         progress.console.print(f'[green]Balancing dataset for {phase}[/green]')
         for label in labels:
@@ -247,24 +249,57 @@ def prepare_balanced_dataset(datafile, progress, phase, labels):
 
         progress.console.print(f'[green]\tMinimum samples: {min_samples}[/green]')
         progress.console.print(f'[green]\tTotal samples: {min_samples * len(labels)}[/green]')
-        indexes = {str(label): list(np.random.choice(file[label].shape[0], size=min_samples, replace=False)) for label in labels}
 
+        indexes = {str(label): list(np.random.choice(file[label].shape[0], size=min_samples, replace=False)) for label in labels}
         file_task = progress.add_task(f"Process balancing phase {phase}", total=min_samples * len(labels))
+
+        # Batch accumulators
+        X_batch = []
+        y_batch = []
 
         while not all(len(lst) == 0 for lst in indexes.values()):
             label = str(np.random.choice(labels))
             if len(indexes[label]) > 0:
                 index = indexes[label].pop()
-                
+
                 X = file[label][index]
                 y = np.array([label], dtype='int')
 
-                file[f'X_{phase}'].resize(file[f'X_{phase}'].shape[0] + 1, axis=0)
-                file[f'X_{phase}'][-1] = X
-                file[f'y_{phase}'].resize(file[f'y_{phase}'].shape[0] + 1, axis=0)
-                file[f'y_{phase}'][-1] = y
+                X_batch.append(X)
+                y_batch.append(y)
 
-                progress.update(file_task, advance=1)
+                # Scrivi i dati quando raggiungi il batch size
+                if len(X_batch) >= batch_size:
+                    # Resize una sola volta e aggiungi tutto il batch
+                    file[f'X_{phase}'].resize(file[f'X_{phase}'].shape[0] + len(X_batch), axis=0)
+                    file[f'X_{phase}'][-len(X_batch):] = X_batch
+
+                    file[f'y_{phase}'].resize(file[f'y_{phase}'].shape[0] + len(y_batch), axis=0)
+                    file[f'y_{phase}'][-len(y_batch):] = y_batch
+
+                    # Svuota i batch
+                    X_batch.clear()
+                    y_batch.clear()
+
+                progress.update(file_task, advance=1, description=f'Balanced dataset for {phase} => {file[f'X_{phase}'].shape} {file[f'y_{phase}'].shape}')
+
+        # Scrivi i dati rimanenti nel batch (se ne sono rimasti)
+        if X_batch:
+            file[f'X_{phase}'].resize(file[f'X_{phase}'].shape[0] + len(X_batch), axis=0)
+            file[f'X_{phase}'][-len(X_batch):] = X_batch
+
+            file[f'y_{phase}'].resize(file[f'y_{phase}'].shape[0] + len(y_batch), axis=0)
+            file[f'y_{phase}'][-len(y_batch):] = y_batch
+
+        progress.update(file_task, description=f'Balanced dataset for {phase} => {file[f'X_{phase}'].shape} {file[f'y_{phase}'].shape}')
+        
+
+class TotalTimeColumn(TextColumn):
+    def render(self, task: Task) -> str:
+        # Calcola il tempo totale trascorso
+        total_time = task.finished_time if task.finished_time else task.elapsed
+        # Mostra il tempo totale in formato mm:ss
+        return f"[green]{total_time:.2f}s[/green]"
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Prepare train data', add_help=True)
@@ -287,6 +322,7 @@ if __name__ == '__main__':
             BarColumn(),
             "[progress.percentage]{task.percentage:>3.0f}%",
             TimeRemainingColumn(),
+            TotalTimeColumn("[green][progress.elapsed]{task.elapsed:>5.2f}s[/green]"),
             TextColumn("{task.description}"),
             console=console
         )
@@ -344,6 +380,7 @@ if __name__ == '__main__':
     prev_candle = None
 
     file_task = progress.add_task(f"Process main file", total=df.shape[0])
+    global_class_distribution = defaultdict(int)
 
     with progress:
         for i, row in df.iterrows():
@@ -385,10 +422,16 @@ if __name__ == '__main__':
                                 first_date = new_df['timestamp'].iloc[0].strftime('%Y%m%d%H%M')
                                 last_date = new_df['timestamp'].iloc[-1].strftime('%Y%m%d%H%M')
                                 file_name = f'{base_path}/processed/data_{first_date}_{last_date}.csv'
+                                class_distribution = new_df['label'].value_counts().to_dict()
                                 data_files.append({
                                     'file_name': file_name,
-                                    'length': new_df.shape[0]
+                                    'length': new_df.shape[0],
+                                    'class_distribution': class_distribution
                                 })
+
+                                for class_label, count in class_distribution.items():
+                                    global_class_distribution[class_label] += count
+
                                 new_df.to_csv(file_name, index=False)
 
                     reconstructed = []
@@ -397,7 +440,7 @@ if __name__ == '__main__':
             else:
                 prev_candle = row
 
-            progress.update(file_task, advance=1)
+            progress.update(file_task, advance=1, description=f'Process main file => {dict(sorted(global_class_distribution.items()))}')
 
         if len(reconstructed) >= min_length:
             new_df = pd.DataFrame(reconstructed)
@@ -421,18 +464,32 @@ if __name__ == '__main__':
                     first_date = new_df['timestamp'].iloc[0].strftime('%Y%m%d%H%M')
                     last_date = new_df['timestamp'].iloc[-1].strftime('%Y%m%d%H%M')
                     file_name = f'{base_path}/processed/data_{first_date}_{last_date}.csv'
+                    class_distribution = new_df['label'].value_counts().to_dict()
                     data_files.append({
                         'file_name': file_name,
-                        'length': new_df.shape[0]
+                        'length': new_df.shape[0],
+                        'class_distribution': class_distribution
                     })
-                    new_df.to_csv(file_name, index=False)
 
+                    for class_label, count in class_distribution.items():
+                        global_class_distribution[class_label] += count
+
+                    new_df.to_csv(file_name, index=False)
+                    progress.update(file_task, advance=1, description=f'Process main file => {dict(sorted(global_class_distribution.items()))}')
+
+        #progress.update(file_task, completed=True)
 
         data_files_df = pd.DataFrame(data_files)
         num_record = data_files_df['length'].sum()
 
-        test_target = int(num_record * test_percentage)
-        validation_target = int(num_record * validation_percentage)
+        min_key = min(global_class_distribution, key=global_class_distribution.get)
+        min_value = global_class_distribution[min_key]
+
+        test_target = int(min_value * test_percentage)
+        validation_target = int(min_value * validation_percentage)
+
+        # test_target = int(num_record * test_percentage)
+        # validation_target = int(num_record * validation_percentage)
         df_test_validation = data_files_df[data_files_df['length'] >= min_file_lenght]
         df_test_validation = df_test_validation.sample(frac=1, random_state=42).reset_index(drop=True)
 
@@ -442,14 +499,14 @@ if __name__ == '__main__':
         file_task = progress.add_task(f"Select train/val/test", total=df_test_validation.shape[0])
         # Itera attraverso il DataFrame casualmente ordinato
         for i, row in df_test_validation.iterrows():
-            if current_sum + row['length'] <= validation_target:
+            if current_sum + row['class_distribution'][min_key] <= validation_target:
                 base_file_name = os.path.basename(row['file_name'])
                 shutil.move(row['file_name'], f'{base_path}/val/{base_file_name}')
-                current_sum += row['length']
-            elif current_sum + row['length'] <= validation_target + test_target:
+                current_sum += row['class_distribution'][min_key]
+            elif current_sum + row['class_distribution'][min_key] <= validation_target + test_target:
                 base_file_name = os.path.basename(row['file_name'])
                 shutil.move(row['file_name'], f'{base_path}/test/{base_file_name}')
-                current_sum += row['length']
+                current_sum += row['class_distribution'][min_key]
             else:
                 break
 
