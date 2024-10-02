@@ -192,9 +192,9 @@ def create_dataset_file(datafile, observation_length, features, labels):
         file.create_dataset('X_val', shape=(0, observation_length, features), maxshape=(None, observation_length, features), dtype='float32')
         file.create_dataset('X_test', shape=(0, observation_length, features), maxshape=(None, observation_length, features), dtype='float32')
 
-        file.create_dataset('y_train', shape=(0, 1), maxshape=(None, 1), dtype='int')
-        file.create_dataset('y_val', shape=(0, 1), maxshape=(None, 1), dtype='int')
-        file.create_dataset('y_test', shape=(0, 1), maxshape=(None, 1), dtype='int')
+        file.create_dataset('y_train', shape=(0,), maxshape=(None,), dtype='int')
+        file.create_dataset('y_val', shape=(0,), maxshape=(None,), dtype='int')
+        file.create_dataset('y_test', shape=(0,), maxshape=(None,), dtype='int')
 
 def add_sample_to_dataset(datafile, labels, X_sets):
     with h5py.File(datafile, 'a') as file:
@@ -263,7 +263,7 @@ def prepare_balanced_dataset(datafile, progress, phase, labels, batch_size=10000
                 index = indexes[label].pop()
 
                 X = file[label][index]
-                y = np.array([label], dtype='int')
+                y = np.array(label, dtype='int')
 
                 X_batch.append(X)
                 y_batch.append(y)
@@ -357,14 +357,14 @@ if __name__ == '__main__':
     bollinger_deviation = 2.5 
     spread_sma = 50
     volume_sma = 50
-    future_lenght = 10
+    future_lenght = args.future_length
     targets = args.targets
     targets_string = '_'.join(map(str, targets))
 
     future_length = args.future_length
     observation_lenght = args.observation_length
 
-    base_file_output_name = f'o{observation_lenght}_f{future_length}_t{targets_string}'
+    base_file_output_name = f'o{observation_lenght}_f{future_length}_t{targets_string}_{args.target_type}'
     datafile = f'{base_path}/set_{base_file_output_name}.h5'
     #phases = ['train', 'val', 'test']
     phases = ['train']
