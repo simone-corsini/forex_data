@@ -309,7 +309,7 @@ if __name__ == '__main__':
     parser.add_argument("-ol", "--observation_length", type=int, help="Number of files to process", default=180)
     parser.add_argument("-mfl", "--min_file_length", type=int, help="Minimum sample per file", default=1440)
     parser.add_argument("--val_percent", type=float, help="Validation percent", default=0.2)
-    parser.add_argument("--test_percent", type=float, help="Test percent", default=0.2)
+    parser.add_argument("--test_percent", type=float, help="Test percent", default=0)
     parser.add_argument("-t", "--targets", nargs="+", type=int, default=[1, 3, 6], help="List of targets (--targets 1 2 3), default=[1, 3, 6]")
     parser.add_argument("-tt", "--target_type", choices=['mean', 'max'], default='mean', help="Type of target to calculate (mean, max), default=mean")
     parser.add_argument('--test', action='store_true', help="Lancia in test mode")
@@ -526,10 +526,7 @@ if __name__ == '__main__':
         for phase in phases:
             progress.console.print(f'[green]Process phase: {phase}[/green]')
             prepare_dataset(datafile, progress, base_path, phase, observation_lenght, features, labels)
-
-            if phase != 'test':
-                prepare_balanced_dataset(datafile, progress, phase, labels)
-
+            prepare_balanced_dataset(datafile, progress, phase, labels)
             clear_label_samples(datafile, labels)
 
         drop_label_samples(datafile, labels)
