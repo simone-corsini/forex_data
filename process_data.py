@@ -226,7 +226,7 @@ def prepare_dataset(datafile, progress, base_path, phase, observation_length, fe
 
         progress.update(file_task, advance=1)
 
-    #progress.update(file_task, completed=True)
+    progress.update(file_task, completed=True)
 
 def clear_label_samples(datafile, labels):
     with h5py.File(datafile, 'a') as file:
@@ -291,7 +291,7 @@ def prepare_balanced_dataset(datafile, progress, phase, labels, batch_size=10000
             file[f'y_{phase}'].resize(file[f'y_{phase}'].shape[0] + len(y_batch), axis=0)
             file[f'y_{phase}'][-len(y_batch):] = y_batch
 
-        progress.update(file_task, description=f'Balanced dataset for {phase} => {file[f'X_{phase}'].shape} {file[f'y_{phase}'].shape}')
+        progress.update(file_task, completed=True, description=f'Balanced dataset for {phase} => {file[f'X_{phase}'].shape} {file[f'y_{phase}'].shape}')
         
 
 class TotalTimeColumn(TextColumn):
@@ -366,7 +366,13 @@ if __name__ == '__main__':
 
     base_file_output_name = f'o{observation_lenght}_f{future_length}_t{targets_string}'
     datafile = f'{base_path}/set_{base_file_output_name}.h5'
-    phases = ['train', 'val', 'test']
+    #phases = ['train', 'val', 'test']
+    phases = ['train']
+    if args.val_percent > 0:
+        phases.append('val')
+    if args.test_percent > 0:
+        phases.append('test')
+
     labels = [str(i) for i in range(len(targets) * 2 + 1)]
 
     max_window = max(slow_sma, fast_sma, slow_ema, middle_ema, fast_ema, bollinger_sma, spread_sma, volume_sma)
@@ -477,7 +483,7 @@ if __name__ == '__main__':
                     new_df.to_csv(file_name, index=False)
                     progress.update(file_task, advance=1, description=f'Process main file => {dict(sorted(global_class_distribution.items()))}')
 
-        #progress.update(file_task, completed=True)
+        progress.update(file_task, completed=True)
 
         data_files_df = pd.DataFrame(data_files)
         num_record = data_files_df['length'].sum()
@@ -488,8 +494,6 @@ if __name__ == '__main__':
         test_target = int(min_value * test_percentage)
         validation_target = int(min_value * validation_percentage)
 
-        # test_target = int(num_record * test_percentage)
-        # validation_target = int(num_record * validation_percentage)
         df_test_validation = data_files_df[data_files_df['length'] >= min_file_lenght]
         df_test_validation = df_test_validation.sample(frac=1, random_state=42).reset_index(drop=True)
 
@@ -515,6 +519,8 @@ if __name__ == '__main__':
                 break
 
             progress.update(file_task, advance=1, description=f'Select train/val/test')
+
+        progress.update(file_task, completed=True)
 
         for file in glob.glob(f'{base_path}/processed/*.csv'):
             base_file_name = os.path.basename(file)
