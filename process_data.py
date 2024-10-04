@@ -211,7 +211,7 @@ def prepare_dataset(datafile, progress, base_path, phase, observation_length, fe
     files = glob.glob(f'{base_path}/{phase}/*.csv')
     file_task = progress.add_task(f"Process files phase {phase}", total=len(files))
     for file in files:
-        df = pd.read_csv(file, parse_dates=['timestamp'], index_col='timestamp', date_parser=lambda x: pd.to_datetime(x, format='%Y-%m-%d %H:%M:%S'))
+        df = pd.read_csv(file, parse_dates=['timestamp'], index_col='timestamp', date_format='%Y-%m-%d %H:%M:%S')
         label_values = df['label'].values
         df = df[features]
 
