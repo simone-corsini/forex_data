@@ -118,7 +118,7 @@ def prepare_data(df_original,
                  slow_sma, fast_sma, slow_ema, middle_ema, fast_ema, 
                  bollinger_sma, bollinger_deviation, 
                  spread_sma, volume_sma, 
-                 future_lenght, targets, target_type, base_commission=0.00007):
+                 future_lenght, targets, target_type, features, base_commission=0.00007):
     max_window = max(slow_sma, fast_sma, slow_ema, middle_ema, fast_ema, bollinger_sma, spread_sma, volume_sma)
 
     df = df_original.copy()
@@ -150,12 +150,12 @@ def prepare_data(df_original,
     df['volume_sma'] = df['volume'].rolling(window=volume_sma).mean()
     df['volume_spread'] = df['volume'] - df['volume_sma']
     df['next_price_range_value_mean'] = mean_spread(df['close'], future_lenght)
-    #df['next_price_range_value_mean'] = df['close_diff'].shift(-future_lenght).rolling(window=future_lenght).mean() 
     df['next_price_range_value_max'] = max_spread(df['close'], future_lenght)
     df['label'] = df.apply(lambda row: calculate_category(row, f'next_price_range_value_{target_type}', 'spread', targets, base_commission), axis=1)
-    #df['label'] = df['label'].astype('Int64')
 
     df = df[max_window:-future_lenght]
+
+    df[features] = (1 + df[features]) / 2
 
     df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume', 'spread',
             'close_diff', 'body', 'lower_shadow', 'upper_shadow',
@@ -334,8 +334,6 @@ if __name__ == '__main__':
     else:
         df = pd.read_csv(args.input)
     os.makedirs(f'{base_path}/processed', exist_ok=True)
-    os.makedirs(f'{base_path}/test', exist_ok=True)
-    os.makedirs(f'{base_path}/val', exist_ok=True)
     os.makedirs(f'{base_path}/train', exist_ok=True)
 
     df.drop(columns=['tick_volume'], inplace=True)
@@ -366,12 +364,13 @@ if __name__ == '__main__':
 
     base_file_output_name = f'o{observation_lenght}_f{future_length}_t{targets_string}_{args.target_type}'
     datafile = f'{base_path}/set_{base_file_output_name}.h5'
-    #phases = ['train', 'val', 'test']
     phases = ['train']
     if args.val_percent > 0:
         phases.append('val')
+        os.makedirs(f'{base_path}/val', exist_ok=True)
     if args.test_percent > 0:
         phases.append('test')
+        os.makedirs(f'{base_path}/test', exist_ok=True)
 
     labels = [str(i) for i in range(len(targets) * 2 + 1)]
 
@@ -414,12 +413,12 @@ if __name__ == '__main__':
                                                 slow_sma, fast_sma, slow_ema, middle_ema, fast_ema, 
                                                 bollinger_sma, bollinger_deviation, 
                                                 spread_sma, volume_sma, 
-                                                future_lenght, targets, args.target_type)
+                                                future_lenght, targets, args.target_type, features)
                         if new_df.isna().sum().sum() > 0 or np.isinf(new_df).values.sum() > 0:
                             print('Valori non validi nei dati => NaN o Inf')
-                        elif new_df[features].apply(lambda x: (x < -1) | (x > 1)).any().any():
+                        elif new_df[features].apply(lambda x: (x < 0) | (x > 1)).any().any():
                             progress.console.print('Valori non validi nei dati => out of range')
-                            out_values = new_df[features].apply(lambda x: (x < -1) | (x > 1))
+                            out_values = new_df[features].apply(lambda x: (x < 0) | (x > 1))
                             out_of_range_rows = new_df[out_values.any(axis=1)][features]
                             progress.console.print(out_of_range_rows.values)
                             exit()
@@ -455,13 +454,13 @@ if __name__ == '__main__':
                                     slow_sma, fast_sma, slow_ema, middle_ema, fast_ema, 
                                     bollinger_sma, bollinger_deviation, 
                                     spread_sma, volume_sma, 
-                                    future_lenght, targets, args.target_type)
+                                    future_lenght, targets, args.target_type, features)
             
             if new_df.isna().sum().sum() > 0 or np.isinf(new_df).values.sum() > 0:
                 progress.console.print('Valori non validi nei dati => NaN o Inf')
-            elif new_df[features].apply(lambda x: (x < -1) | (x > 1)).any().any():
+            elif new_df[features].apply(lambda x: (x < 0) | (x > 1)).any().any():
                 progress.console.print('Valori non validi nei dati => out of range')
-                out_values = new_df[features].apply(lambda x: (x < -1) | (x > 1))
+                out_values = new_df[features].apply(lambda x: (x < 0) | (x > 1))
                 out_of_range_rows = new_df[out_values.any(axis=1)][features]
                 progress.console.print(out_of_range_rows.values)
                 exit()
