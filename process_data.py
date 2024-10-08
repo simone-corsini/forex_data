@@ -155,8 +155,6 @@ def prepare_data(df_original,
 
     df = df[max_window:-future_lenght]
 
-    df[features] = (1 + df[features]) / 2
-
     df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume', 'spread',
             'close_diff', 'body', 'lower_shadow', 'upper_shadow',
             'sma_spread', 'ema_slow_fast_spread', 'ema_slow_middle_spread', 'ema_middle_fast_spread',
@@ -242,8 +240,17 @@ def drop_label_samples(datafile, labels):
 def prepare_balanced_dataset(datafile, progress, phase, labels, batch_size=10000):
     with h5py.File(datafile, 'a') as file:
         progress.console.print(f'[green]Balancing dataset for {phase}[/green]')
+
+        min_value = np.inf
+        max_value = -np.inf
+
         for label in labels:
             progress.console.print(f'[green]\t{label}=>{file[label].shape[0]}[/green]')
+            min_value = min(min_value, np.min(file[label]))
+            max_value = max(max_value, np.max(file[label]))
+
+        file[f'X_{phase}'].attrs['min'] = min_value
+        file[f'X_{phase}'].attrs['max'] = max_value
 
         min_samples = min([file[label].shape[0] for label in labels])
 
@@ -292,7 +299,19 @@ def prepare_balanced_dataset(datafile, progress, phase, labels, batch_size=10000
             file[f'y_{phase}'][-len(y_batch):] = y_batch
 
         progress.update(file_task, completed=True, description=f'Balanced dataset for {phase} => {file[f'X_{phase}'].shape} {file[f'y_{phase}'].shape}')
-        
+
+def normalize_dataset(datafile, min_value, max_value):
+    with h5py.File(datafile, 'r+') as file:
+        X_train = file['X_train']
+        X_val = file['X_val']
+        X_test = file['X_test']
+
+        global_min = file['X_train'].attrs['min']
+        global_max = file['X_train'].attrs['max']
+
+        X_train[...] = (X_train[...] - global_min) / (global_max - global_min) * (max_value - min_value) + min_value
+        X_val[...] = (X_val[...] - global_min) / (global_max - global_min) * (max_value - min_value) + min_value
+        X_test[...] = (X_test[...] - global_min) / (global_max - global_min) * (max_value - min_value) + min_value
 
 class TotalTimeColumn(TextColumn):
     def render(self, task: Task) -> str:
@@ -416,9 +435,9 @@ if __name__ == '__main__':
                                                 future_lenght, targets, args.target_type, features)
                         if new_df.isna().sum().sum() > 0 or np.isinf(new_df).values.sum() > 0:
                             print('Valori non validi nei dati => NaN o Inf')
-                        elif new_df[features].apply(lambda x: (x < 0) | (x > 1)).any().any():
+                        elif new_df[features].apply(lambda x: (x < -1) | (x > 1)).any().any():
                             progress.console.print('Valori non validi nei dati => out of range')
-                            out_values = new_df[features].apply(lambda x: (x < 0) | (x > 1))
+                            out_values = new_df[features].apply(lambda x: (x < -1) | (x > 1))
                             out_of_range_rows = new_df[out_values.any(axis=1)][features]
                             progress.console.print(out_of_range_rows.values)
                             exit()
@@ -458,9 +477,9 @@ if __name__ == '__main__':
             
             if new_df.isna().sum().sum() > 0 or np.isinf(new_df).values.sum() > 0:
                 progress.console.print('Valori non validi nei dati => NaN o Inf')
-            elif new_df[features].apply(lambda x: (x < 0) | (x > 1)).any().any():
+            elif new_df[features].apply(lambda x: (x < -1) | (x > 1)).any().any():
                 progress.console.print('Valori non validi nei dati => out of range')
-                out_values = new_df[features].apply(lambda x: (x < 0) | (x > 1))
+                out_values = new_df[features].apply(lambda x: (x < -1) | (x > 1))
                 out_of_range_rows = new_df[out_values.any(axis=1)][features]
                 progress.console.print(out_of_range_rows.values)
                 exit()
@@ -545,3 +564,6 @@ if __name__ == '__main__':
             os.removedirs(f'{base_path}/{phase}')
 
         os.removedirs(f'{base_path}/processed')
+
+        progress.console.print('[green]Normalize dataset[/green]')
+        normalize_dataset(datafile, 0.05, 0.95)
