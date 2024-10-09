@@ -89,7 +89,7 @@ if __name__ == '__main__':
         )
 
     args = parser.parse_args()
-    df = pd.read_csv(args.input, nrows=100000)
+    df = pd.read_csv(args.input)
 
     df.drop(columns=['tick_volume'], inplace=True)
     df['timestamp'] = pd.to_datetime(df['timestamp'])
