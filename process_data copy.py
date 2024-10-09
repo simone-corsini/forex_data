@@ -6,10 +6,63 @@ import shutil
 import glob
 import zipfile
 import h5py
-
 from collections import defaultdict
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, Task
 from rich.console import Console
+
+def calculate_shadows(row):
+    lower_shadow = min(row['open'], row['close']) - row['low']
+    upper_shadow = row['high'] - max(row['open'], row['close'])
+    return lower_shadow, upper_shadow
+
+def calculate_body(row):
+    return abs(row['open'] - row['close'])
+
+def gap_1(prev_candle, current_candle):
+    prev_lower_shadow, prev_upper_shadow = calculate_shadows(prev_candle)
+    current_lower_shadow, current_upper_shadow = calculate_shadows(current_candle)
+    lower_shadow = round((prev_lower_shadow + current_lower_shadow) / 2, 5)
+    upper_shadow = round((prev_upper_shadow + current_upper_shadow) / 2, 5)
+    return {
+        'timestamp': prev_candle['timestamp'] + pd.Timedelta(minutes=1), 
+        'open': prev_candle['close'], 
+        'high': max(prev_candle['close'], current_candle['open']) + upper_shadow,
+        'low': min(prev_candle['close'], current_candle['open']) - lower_shadow,
+        'close': current_candle['open'], 
+        'volume': min(prev_candle['volume'],current_candle['volume']),
+        'spread': max(prev_candle['spread'], current_candle['spread'])
+    }
+
+def gap_2(prev_candle, current_candle):
+    prev_lower_shadow, prev_upper_shadow = calculate_shadows(prev_candle)
+    current_lower_shadow, current_upper_shadow = calculate_shadows(current_candle)
+    lower_shadow = round((prev_lower_shadow + current_lower_shadow) / 2, 5)
+    upper_shadow = round((prev_upper_shadow + current_upper_shadow) / 2, 5)
+    prev_body = calculate_body(prev_candle)
+    current_body = calculate_body(current_candle)
+    body = round((prev_body + current_body) / 2, 5)
+    gap_1_open = prev_candle['close']
+    gap_2_close = current_candle['open']
+    gap_1_close = gap_2_open = gap_1_open + body if gap_1_open < gap_2_close else gap_1_open - body
+    volume = min(prev_candle['volume'],current_candle['volume'])
+    spread = max(prev_candle['spread'], current_candle['spread'])
+    return {
+        'timestamp': prev_candle['timestamp'] + pd.Timedelta(minutes=1), 
+        'open': gap_1_open, 
+        'high': max(gap_1_open, gap_1_close) + upper_shadow,
+        'low': min(gap_1_open, gap_1_close) - lower_shadow,
+        'close': gap_1_close, 
+        'volume': volume,
+        'spread': spread
+    }, {
+        'timestamp': prev_candle['timestamp'] + pd.Timedelta(minutes=2), 
+        'open': gap_2_open, 
+        'high': max(gap_2_open, gap_2_close) + upper_shadow,
+        'low': min(gap_2_open, gap_2_close) - lower_shadow,
+        'close': gap_2_close, 
+        'volume': volume,
+        'spread': spread
+    }
 
 def calculate_category(row, price_col, spread_col, targets, base_commission=0.00007):
     if pd.isna(row[price_col]) or pd.isna(row[spread_col]):
@@ -269,7 +322,7 @@ class TotalTimeColumn(TextColumn):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Prepare train data', add_help=True)
-    parser.add_argument("-i", "--input", type=str, help="Input folder for forex files", default='./data/corrected')
+    parser.add_argument("-i", "--input", type=str, help="Input forex file", default='./data/EURUSD_M1_ohcl.csv')
     parser.add_argument("-o", "--output", type=str, help="Output folder", default='./data/train_sets')
     parser.add_argument("-fl", "--future_length", type=int, help="Number of files to process", default=10)
     parser.add_argument("-ol", "--observation_length", type=int, help="Number of files to process", default=180)
@@ -278,6 +331,7 @@ if __name__ == '__main__':
     parser.add_argument("--test_percent", type=float, help="Test percent", default=0)
     parser.add_argument("-t", "--targets", nargs="+", type=int, default=[1, 3, 6], help="List of targets (--targets 1 2 3), default=[1, 3, 6]")
     parser.add_argument("-tt", "--target_type", choices=['mean', 'max'], default='mean', help="Type of target to calculate (mean, max), default=mean")
+    parser.add_argument('--test', action='store_true', help="Lancia in test mode")
     args = parser.parse_args()
 
     base_path = args.output
@@ -294,8 +348,16 @@ if __name__ == '__main__':
 
     progress.console.print('[green]Caricamento dati[/green]')
 
+    if args.test:
+        df = pd.read_csv(args.input, nrows=10000)
+    else:
+        df = pd.read_csv(args.input)
     os.makedirs(f'{base_path}/processed', exist_ok=True)
     os.makedirs(f'{base_path}/train', exist_ok=True)
+
+    df.drop(columns=['tick_volume'], inplace=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.sort_values(by='timestamp').reset_index(drop=True)
 
     data_files = []
     min_file_lenght = args.min_file_length
@@ -341,47 +403,103 @@ if __name__ == '__main__':
     reconstructed = []
     prev_candle = None
 
-    source_files = glob.glob(f'{args.input}/*.csv')
-
-    file_task = progress.add_task(f"Process main file", total=len(source_files))
+    file_task = progress.add_task(f"Process main file", total=df.shape[0])
     global_class_distribution = defaultdict(int)
 
     with progress:
-        for source_file in source_files:
-            new_df = pd.read_csv(source_file)
-            if new_df.shape[0] > min_length:
-                new_df['timestamp'] = pd.to_datetime(new_df['timestamp'])
-                new_df = prepare_data(new_df,
-                                        slow_sma, fast_sma, slow_ema, middle_ema, fast_ema, 
-                                        bollinger_sma, bollinger_deviation, 
-                                        spread_sma, volume_sma, 
-                                        future_lenght, targets, args.target_type, features)
-                if new_df.isna().sum().sum() > 0 or np.isinf(new_df).values.sum() > 0:
-                    print('Valori non validi nei dati => NaN o Inf')
-                elif new_df[features].apply(lambda x: (x < -1) | (x > 1)).any().any():
-                    progress.console.print('Valori non validi nei dati => out of range')
-                    out_values = new_df[features].apply(lambda x: (x < -1) | (x > 1))
-                    out_of_range_rows = new_df[out_values.any(axis=1)][features]
-                    progress.console.print(out_of_range_rows.values)
-                    exit()
+        for i, row in df.iterrows():
+            if prev_candle is not None:
+                gap = (row['timestamp'] - prev_candle['timestamp']).total_seconds() / 60
+
+                if gap == 1:
+                    reconstructed.append(row.to_dict())
+                    prev_candle = row
+                elif gap == 2:
+                    reconstructed.append(gap_1(prev_candle, row))
+                    reconstructed.append(row.to_dict())
+                    prev_candle = row
+                elif gap == 3:
+                    gap_1_candle, gap_2_candle = gap_2(prev_candle, row)
+                    reconstructed.append(gap_1_candle)
+                    reconstructed.append(gap_2_candle)
+                    reconstructed.append(row.to_dict())
+                    prev_candle = row
                 else:
-                    if new_df.shape[0] >= observation_lenght:
-                        first_date = new_df['timestamp'].iloc[0].strftime('%Y%m%d%H%M')
-                        last_date = new_df['timestamp'].iloc[-1].strftime('%Y%m%d%H%M')
-                        file_name = f'{base_path}/processed/data_{first_date}_{last_date}.csv'
-                        class_distribution = new_df['label'].value_counts().to_dict()
-                        data_files.append({
-                            'file_name': file_name,
-                            'length': new_df.shape[0],
-                            'class_distribution': class_distribution
-                        })
+                    if len(reconstructed) >= min_length:
+                        new_df = pd.DataFrame(reconstructed)
+                        new_df['timestamp'] = pd.to_datetime(new_df['timestamp'])
+                        new_df = prepare_data(new_df,
+                                                slow_sma, fast_sma, slow_ema, middle_ema, fast_ema, 
+                                                bollinger_sma, bollinger_deviation, 
+                                                spread_sma, volume_sma, 
+                                                future_lenght, targets, args.target_type, features)
+                        if new_df.isna().sum().sum() > 0 or np.isinf(new_df).values.sum() > 0:
+                            print('Valori non validi nei dati => NaN o Inf')
+                        elif new_df[features].apply(lambda x: (x < -1) | (x > 1)).any().any():
+                            progress.console.print('Valori non validi nei dati => out of range')
+                            out_values = new_df[features].apply(lambda x: (x < -1) | (x > 1))
+                            out_of_range_rows = new_df[out_values.any(axis=1)][features]
+                            progress.console.print(out_of_range_rows.values)
+                            exit()
+                        else:
+                            if new_df.shape[0] >= observation_lenght:
+                                first_date = new_df['timestamp'].iloc[0].strftime('%Y%m%d%H%M')
+                                last_date = new_df['timestamp'].iloc[-1].strftime('%Y%m%d%H%M')
+                                file_name = f'{base_path}/processed/data_{first_date}_{last_date}.csv'
+                                class_distribution = new_df['label'].value_counts().to_dict()
+                                data_files.append({
+                                    'file_name': file_name,
+                                    'length': new_df.shape[0],
+                                    'class_distribution': class_distribution
+                                })
 
-                        for class_label, count in class_distribution.items():
-                            global_class_distribution[class_label] += count
+                                for class_label, count in class_distribution.items():
+                                    global_class_distribution[class_label] += count
 
-                        new_df.to_csv(file_name, index=False)
-            
+                                new_df.to_csv(file_name, index=False)
+
+                    reconstructed = []
+                    prev_candle = None
+                    continue
+            else:
+                prev_candle = row
+
             progress.update(file_task, advance=1, description=f'Process main file => {dict(sorted(global_class_distribution.items()))}')
+
+        if len(reconstructed) >= min_length:
+            new_df = pd.DataFrame(reconstructed)
+            new_df['timestamp'] = pd.to_datetime(new_df['timestamp'])
+            new_df = prepare_data(new_df,
+                                    slow_sma, fast_sma, slow_ema, middle_ema, fast_ema, 
+                                    bollinger_sma, bollinger_deviation, 
+                                    spread_sma, volume_sma, 
+                                    future_lenght, targets, args.target_type, features)
+            
+            if new_df.isna().sum().sum() > 0 or np.isinf(new_df).values.sum() > 0:
+                progress.console.print('Valori non validi nei dati => NaN o Inf')
+            elif new_df[features].apply(lambda x: (x < -1) | (x > 1)).any().any():
+                progress.console.print('Valori non validi nei dati => out of range')
+                out_values = new_df[features].apply(lambda x: (x < -1) | (x > 1))
+                out_of_range_rows = new_df[out_values.any(axis=1)][features]
+                progress.console.print(out_of_range_rows.values)
+                exit()
+            else:
+                if new_df.shape[0] >= observation_lenght:
+                    first_date = new_df['timestamp'].iloc[0].strftime('%Y%m%d%H%M')
+                    last_date = new_df['timestamp'].iloc[-1].strftime('%Y%m%d%H%M')
+                    file_name = f'{base_path}/processed/data_{first_date}_{last_date}.csv'
+                    class_distribution = new_df['label'].value_counts().to_dict()
+                    data_files.append({
+                        'file_name': file_name,
+                        'length': new_df.shape[0],
+                        'class_distribution': class_distribution
+                    })
+
+                    for class_label, count in class_distribution.items():
+                        global_class_distribution[class_label] += count
+
+                    new_df.to_csv(file_name, index=False)
+                    progress.update(file_task, advance=1, description=f'Process main file => {dict(sorted(global_class_distribution.items()))}')
 
         progress.update(file_task, completed=True)
 
