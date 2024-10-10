@@ -43,8 +43,6 @@ if __name__ == '__main__':
         y_test = file['y_test']
 
         for i in range(X_train.shape[0]):
-            print(type(y_train[i]))
-            print(type(label_selected[y_train[i]]))
             if (label_selected[y_train[i]] < args.partial_train):
                 label_selected[y_train[i]] += 1
                 X_train_partial.append(X_train[i])
@@ -84,10 +82,14 @@ if __name__ == '__main__':
         file.create_dataset('y_train', data=y_train_partial)
         file.create_dataset('X_val', data=X_val_partial)
         file.create_dataset('y_val', data=y_val_partial)
+        file.create_dataset('X_test', data=X_test_partial)
+        file.create_dataset('y_test', data=y_test_partial)
 
-        print(file['X_train'].shape)
-        print(file['y_train'].shape)
-        print(file['X_val'].shape)
-        print(file['y_val'].shape)
+        print('Partial X_train set shape: ', file['X_train'].shape)
+        print('Partial y_train set shape: ', file['y_train'].shape)
+        print('Partial X_val set shape: ', file['X_val'].shape)
+        print('Partial y_val set shape: ', file['y_val'].shape)
+        print('Partial X_test set shape: ', file['X_test'].shape)
+        print('Partial y_test set shape: ', file['y_test'].shape)
 
         
