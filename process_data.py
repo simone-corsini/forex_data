@@ -278,6 +278,9 @@ if __name__ == '__main__':
     parser.add_argument("--test_percent", type=float, help="Test percent", default=0)
     parser.add_argument("-t", "--targets", nargs="+", type=int, default=[1, 3, 6], help="List of targets (--targets 1 2 3), default=[1, 3, 6]")
     parser.add_argument("-tt", "--target_type", choices=['mean', 'max'], default='mean', help="Type of target to calculate (mean, max), default=mean")
+    parser.add_argument("--norm_min", type=float, help="Minimum value for normalization", default=-0.95)
+    parser.add_argument("--norm_max", type=float, help="Maximum value for normalization", default=0.95)
+
     args = parser.parse_args()
 
     base_path = args.output
@@ -448,4 +451,4 @@ if __name__ == '__main__':
         os.removedirs(f'{base_path}/processed')
 
         progress.console.print('[green]Normalize dataset[/green]')
-        normalize_dataset(datafile, 0.05, 0.95)
+        normalize_dataset(datafile, args.norm_min, args.norm_max)
