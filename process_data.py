@@ -256,6 +256,13 @@ def normalize_dataset(datafile, min_value, max_value):
         global_min = file['X_train'].attrs['min']
         global_max = file['X_train'].attrs['max']
 
+        file['X_train'].attrs['norm_min'] = min_value
+        file['X_train'].attrs['norm_max'] = max_value
+        file['X_val'].attrs['norm_min'] = min_value
+        file['X_val'].attrs['norm_max'] = max_value
+        file['X_test'].attrs['norm_min'] = min_value
+        file['X_test'].attrs['norm_max'] = max_value
+
         X_train[...] = (X_train[...] - global_min) / (global_max - global_min) * (max_value - min_value) + min_value
         X_val[...] = (X_val[...] - global_min) / (global_max - global_min) * (max_value - min_value) + min_value
         X_test[...] = (X_test[...] - global_min) / (global_max - global_min) * (max_value - min_value) + min_value
