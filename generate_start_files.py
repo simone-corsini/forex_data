@@ -21,13 +21,13 @@ def calculate_shadows(row):
 def calculate_body(row):
     return abs(row['open'] - row['close'])
 
-def gap_1(prev_candle, current_candle):
+def gap_1(prev_candle, current_candle, candle_period):
     prev_lower_shadow, prev_upper_shadow = calculate_shadows(prev_candle)
     current_lower_shadow, current_upper_shadow = calculate_shadows(current_candle)
     lower_shadow = round((prev_lower_shadow + current_lower_shadow) / 2, 5)
     upper_shadow = round((prev_upper_shadow + current_upper_shadow) / 2, 5)
     return {
-        'timestamp': prev_candle['timestamp'] + pd.Timedelta(minutes=1), 
+        'timestamp': prev_candle['timestamp'] + pd.Timedelta(minutes=candle_period), 
         'open': prev_candle['close'], 
         'high': max(prev_candle['close'], current_candle['open']) + upper_shadow,
         'low': min(prev_candle['close'], current_candle['open']) - lower_shadow,
@@ -36,7 +36,7 @@ def gap_1(prev_candle, current_candle):
         'spread': max(prev_candle['spread'], current_candle['spread'])
     }
 
-def gap_2(prev_candle, current_candle):
+def gap_2(prev_candle, current_candle, candle_period):
     prev_lower_shadow, prev_upper_shadow = calculate_shadows(prev_candle)
     current_lower_shadow, current_upper_shadow = calculate_shadows(current_candle)
     lower_shadow = round((prev_lower_shadow + current_lower_shadow) / 2, 5)
@@ -50,7 +50,7 @@ def gap_2(prev_candle, current_candle):
     volume = min(prev_candle['volume'],current_candle['volume'])
     spread = max(prev_candle['spread'], current_candle['spread'])
     return {
-        'timestamp': prev_candle['timestamp'] + pd.Timedelta(minutes=1), 
+        'timestamp': prev_candle['timestamp'] + pd.Timedelta(minutes=candle_period), 
         'open': gap_1_open, 
         'high': max(gap_1_open, gap_1_close) + upper_shadow,
         'low': min(gap_1_open, gap_1_close) - lower_shadow,
@@ -58,7 +58,7 @@ def gap_2(prev_candle, current_candle):
         'volume': volume,
         'spread': spread
     }, {
-        'timestamp': prev_candle['timestamp'] + pd.Timedelta(minutes=2), 
+        'timestamp': prev_candle['timestamp'] + pd.Timedelta(minutes=2*candle_period), 
         'open': gap_2_open, 
         'high': max(gap_2_open, gap_2_close) + upper_shadow,
         'low': min(gap_2_open, gap_2_close) - lower_shadow,
@@ -71,6 +71,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Prepare train data', add_help=True)
     parser.add_argument("-i", "--input", type=str, help="Input forex file", default='./data/EURUSD_M1_ohcl.csv')
     parser.add_argument("-o", "--output", type=str, help="Output for forex files", default='./data/corrected')
+    parser.add_argument("-p", "--period", type=int, help="Candle period in minutes (e.g., 1 for M1, 5 for M5)", default=1)
 
     args = parser.parse_args()
 
@@ -102,17 +103,17 @@ if __name__ == '__main__':
     with progress:
         for i, row in df.iterrows():
             if prev_candle is not None:
-                gap = (row['timestamp'] - prev_candle['timestamp']).total_seconds() / 60
+                gap = (row['timestamp'] - prev_candle['timestamp']).total_seconds() / (60 * args.period)
 
                 if gap == 1:
                     reconstructed.append(row.to_dict())
                     prev_candle = row
                 elif gap == 2:
-                    reconstructed.append(gap_1(prev_candle, row))
+                    reconstructed.append(gap_1(prev_candle, row, args.period))
                     reconstructed.append(row.to_dict())
                     prev_candle = row
                 elif gap == 3:
-                    gap_1_candle, gap_2_candle = gap_2(prev_candle, row)
+                    gap_1_candle, gap_2_candle = gap_2(prev_candle, row, args.period)
                     reconstructed.append(gap_1_candle)
                     reconstructed.append(gap_2_candle)
                     reconstructed.append(row.to_dict())
